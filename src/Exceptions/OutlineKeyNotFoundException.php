@@ -2,7 +2,7 @@
 
 namespace OutlineApiClient\Exceptions;
 
-class OutlineKeyNotFoundException extends \Exception
+class OutlineKeyNotFoundException extends OutlineException
 {
 
 }

@@ -14,7 +14,7 @@ $ composer require intensa/outline-api-client
 
 ## Requirements
 
-PHP >= 7.4
+PHP >= 8.0
 
 ## How to use
 
@@ -24,40 +24,44 @@ PHP >= 7.4
 
 require 'vendor/autoload.php';
 
-use OutlineApiClient\OutlineApiClient;
+use OutlineApiClient\Api\OutlineApiClient;
+use OutlineApiClient\Http\Client\CurlClient;
+use OutlineApiClient\Exceptions\OutlineException;
 
 try {
-
     // Your Outline server address
     $serverUrl = 'https://127.0.0.1:3333/YZwl3D1r-B6cNYzQ';
-
-    $api = new OutlineApiClient($serverUrl);
+    
+    $api = new OutlineApiClient(
+        $serverUrl,
+        new CurlClient(['timeout' => 10])
+    );
 
     // Get an array of all server keys
-    $keysList = $api->getKeys();
+    $keysList = $api->getAccessKeys();
 
     // Create new key
-    $key = $api->create();
+    $key = $api->createNewAccessKey();
 
     // Rename exist key.
     // Passing key id and new name
-    $api->setName($key['id'], 'New key name');
+    $api->renameAccessKey($key['id'], 'New key name');
 
     // Set transfer data limit for key.
     // Passing key id and limit in bytes.
     // In the example set 5MB
-    $api->setLimit($key['id'], 5 * 1024 * 1024);
+    $api->setDataLimitForAccessKey($key['id'], 5 * 1024 * 1024);
 
     // Remove key limit
     // Passing key id
-    $api->deleteLimit($key['id']);
+    $api->deleteDataLimitForAccessKey($key['id']);
 
     // Delete key
-    $api->delete($key['id']);
+    $api->deleteAccessKey($key['id']);
 
     // Get an array of used traffic for all keys
-    $transferData = $api->metricsTransfer();
-} catch (\Exception $e) {
+    $transferData = $api->getMetricsTransfer();
+} catch (OutlineException $e) {
     // Handle exception
 }
 ```
@@ -71,17 +75,23 @@ Interaction with an existing key
 require 'vendor/autoload.php';
 
 use OutlineApiClient\OutlineKey;
+use OutlineApiClient\Api\OutlineApiClient;
+use OutlineApiClient\Exceptions\OutlineException;
+use OutlineApiClient\Http\Client\GuzzleBridgeHttpClient;
 
 try {
 
     // Your Outline server address
     $serverUrl = 'https://127.0.0.1:3333/YZwl3D1r-B6cNYzQ';
-
+    $outlineApiClient = new GuzzleBridgeHttpClient((new \GuzzleHttp\Client(['verify' => false])));
     // Key id
     $keyId = 1;
     
     // Initializing an object and getting key data
-    $key = (new OutlineKey($serverUrl))->load($keyId);
+    $key = (new OutlineKey(
+            new OutlineApiClient($serverUrl, $outlineApiClient)
+        )
+    ))->load($keyId);
     
     // Get key id
     $key->getId();
@@ -110,7 +120,7 @@ try {
     // Delete key
     $key->delete();
     
-} catch (\Exception $e) {
+} catch (OutlineException $e) {
     // Handle exception
 }
 
@@ -123,6 +133,9 @@ Creating a new key on the server
 require 'vendor/autoload.php';
 
 use OutlineApiClient\OutlineKey;
+use OutlineApiClient\Api\OutlineApiClient;
+use OutlineApiClient\Http\Client\CurlClient;
+use OutlineApiClient\Exceptions\OutlineException;
 
 try {
     // Your Outline server address
@@ -130,9 +143,14 @@ try {
     
     // Initializing an object and creating new key
     // Passing to method create() key name and traffic limit (optional)
-    $key = (new OutlineKey($serverUrl))->create('Key name', 5 * 1024 * 1024);
+   $key = (new OutlineKey(
+        new OutlineApiClient(
+            $serverUrl,
+            new CurlClient(['timeout' => 10]),
+        )
+    ))->create('Key name', 5 * 1024 * 1024);
 
-} catch (\Exception $e) {
+} catch (OutlineException $e) {
 
 }
 ```

@@ -1,13 +1,13 @@
 <?php
 namespace OutlineApiClient;
 
+use OutlineApiClient\Api\OutlineApiClientInterface;
 use OutlineApiClient\Exceptions\OutlineApiException;
 use OutlineApiClient\Exceptions\OutlineKeyException;
 use OutlineApiClient\Exceptions\OutlineKeyNotFoundException;
 
 class OutlineKey
 {
-    protected ?OutlineApiClient $api = null;
     protected array $data = [
         'id' => -1,
         'name' => '',
@@ -19,16 +19,11 @@ class OutlineKey
 
     protected bool $isLoaded = false;
 
-
-    /**
-     * @throws OutlineApiException
-     */
-    public function __construct($server)
+    public function __construct(private OutlineApiClientInterface $api)
     {
-        $this->api = new OutlineApiClient($server);
     }
 
-    protected function setData($setData)
+    protected function setData(array $setData)
     {
         $this->data = array_merge($this->data, $setData);
     }
@@ -37,7 +32,6 @@ class OutlineKey
     {
         return $this->data;
     }
-
 
     protected function isLoaded(): bool
     {
@@ -50,38 +44,34 @@ class OutlineKey
      */
     public function get($keyId, $searchKey = 'id'): array
     {
-        $getKeyList = $this->api->getKeys();
+        $getKeyList = $this->api->getAccessKeys();
         $findKeyData = [];
 
-        if (!empty($getKeyList)) {
-            $list = $getKeyList['accessKeys'];
-
-            foreach ($list as $item) {
-
-                if ($keyId == $item[$searchKey]) {
-                    $findKeyData = $item;
-                    break;
-                }
-            }
-
-            if (empty($findKeyData)) {
-                throw new OutlineKeyNotFoundException('Key not found. You may create new key');
-            }
-
-        } else {
+        if (empty($getKeyList)) {
             throw new OutlineKeyException('Not transferred keys list');
+        }
+
+        $list = $getKeyList['accessKeys'];
+        foreach ($list as $item) {
+            if ($keyId == $item[$searchKey]) {
+                $findKeyData = $item;
+                break;
+            }
+        }
+
+        if (empty($findKeyData)) {
+            throw new OutlineKeyNotFoundException('Key not found. You may create new key');
         }
 
         return $findKeyData;
     }
-
 
     /**
      * @throws OutlineKeyNotFoundException
      * @throws OutlineKeyException
      * @throws OutlineApiException
      */
-    public function getByName($name): array
+    public function getByName(string $name): array
     {
         return $this->get($name, 'name');
     }
@@ -102,14 +92,13 @@ class OutlineKey
 
     public function getId()
     {
-        return $this->data['id'];
+        return (string) $this->data['id'];
     }
 
     public function getName()
     {
         return $this->data['name'];
     }
-
 
     /**
      * @throws OutlineApiException
@@ -118,7 +107,7 @@ class OutlineKey
     {
         $transfer = 0;
 
-        $transferData = $this->api->metricsTransfer();
+        $transferData = $this->api->getMetricsTransfer();
 
         if (
             isset($transferData['bytesTransferredByUserId'])
@@ -140,22 +129,21 @@ class OutlineKey
         return $this->data['accessUrl'];
     }
 
-
     /**
      * @throws OutlineKeyException
      * @throws OutlineApiException
      */
-    public function rename($newName)
+    public function rename(string $newName)
     {
-        if ($this->isLoaded()) {
-            $setName = $this->api->setName($this->getId(), $newName);
-            if (!$setName) {
-                throw new OutlineKeyException('Error rename. Please contact administrator');
-            } else {
-                $this->setData(['name' => $newName]);
-            }
-        } else {
+        if (!$this->isLoaded()) {
             throw new OutlineKeyException('Failed rename key. Need load data key');
+        }
+
+        $setName = $this->api->renameAccessKey($this->getId(), $newName);
+        if (!$setName) {
+            throw new OutlineKeyException('Error rename. Please contact administrator');
+        } else {
+            $this->setData(['name' => $newName]);
         }
     }
 
@@ -163,10 +151,10 @@ class OutlineKey
      * @throws OutlineKeyException
      * @throws OutlineApiException
      */
-    public function limit($limitValue)
+    public function limit(int $limitValue)
     {
         if ($this->isLoaded()) {
-            $setLimit = $this->api->setLimit($this->getId(), $limitValue);
+            $setLimit = $this->api->setDataLimitForAccessKeys($this->getId(), $limitValue);
 
             if (!$setLimit) {
                 throw new OutlineKeyException('Error set limit. Please contact administrator');
@@ -189,7 +177,7 @@ class OutlineKey
     public function deleteLimit(): void
     {
         if ($this->isLoaded()) {
-            $deleteLimit = $this->api->deleteLimit($this->getId());
+            $deleteLimit = $this->api->deleteDataLimitForAccessKey($this->getId());
 
             if (!$deleteLimit) {
                 throw new OutlineKeyException('Error delete key limit');
@@ -207,43 +195,40 @@ class OutlineKey
      * @throws OutlineKeyException
      * @throws OutlineApiException
      */
-    public function create($name, $limit = false): OutlineKey
+    public function create(string $name, int $limit = 0): OutlineKey
     {
-        if (!empty($name)) {
-            $create = $this->api->create();
+        $create = $this->api->createNewAccessKey();
 
-            if (!empty($create)) {
-                $this->setData($create);
+        if (!empty($create)) {
+            $this->setData($create);
 
-                $setName = $this->api->setName($create['id'], $name);
+            $setName = $this->api->renameAccessKey($create['id'], $name);
 
-                if ($setName) {
-                    $this->setData(['name' => $name]);
+            if ($setName) {
+                $this->setData(['name' => $name]);
 
-                    if ($limit !== false) {
-                        $setLimit = $this->api->setLimit($create['id'], $limit);
+                if ($limit > 0) {
+                    $setLimit = $this->api->setDataLimitForAccessKeys($create['id'], $limit);
 
-                        if ($setLimit) {
-                            $this->setData([
-                                'dataLimit' => [
-                                    'bytes' => $limit
-                                ]
-                            ]);
-                        } else {
-                            throw new OutlineKeyException('Error set limit key');
-                        }
+                    if ($setLimit) {
+                        $this->setData([
+                            'dataLimit' => [
+                                'bytes' => $limit
+                            ]
+                        ]);
+                    } else {
+                        throw new OutlineKeyException('Error set limit key');
                     }
-                } else {
-                    throw new OutlineKeyException('Error set key name');
                 }
             } else {
-                throw new OutlineKeyException('Error create key');
+                throw new OutlineKeyException('Error set key name');
             }
+        } else {
+            throw new OutlineKeyException('Error create key');
         }
 
         return $this;
     }
-
 
     /**
      * @throws OutlineKeyException
@@ -251,7 +236,7 @@ class OutlineKey
      */
     public function delete(): bool
     {
-        if ($this->api->delete($this->getId())) {
+        if ($this->api->deleteAccessKey($this->getId())) {
             return true;
         } else {
             throw new OutlineKeyException('Error delete key id=' . $this->getId());
